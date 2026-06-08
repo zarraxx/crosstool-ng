@@ -1,4 +1,7 @@
 .build/
+archives/
+dist/
+include/
 build.log
 .config.old
-include/
+*.tar.gz
