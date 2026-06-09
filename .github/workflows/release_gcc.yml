@@ -85,6 +85,7 @@ jobs:
           test -d "ctng_workspace/native/${TRIPLE}-gcc15"
           rm -rf dist
           mkdir -p archives dist
+          chmod -R a+rwX archives dist ctng_workspace
           script -q -e -c "TRIPLE=${TRIPLE} ./build.sh" /dev/null
           find dist -mindepth 1 -maxdepth 1 -type d -print
 
