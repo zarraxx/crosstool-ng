@@ -89,12 +89,52 @@ jobs:
           script -q -e -c "TRIPLE=${TRIPLE} ./build.sh" /dev/null
           find dist -mindepth 1 -maxdepth 1 -type d -print
 
+      - name: Pack toolchain artifact
+        env:
+          TRIPLE: ${{ matrix.target }}
+        run: |
+          set -euxo pipefail
+          shopt -s nullglob
+          toolchains=(dist/*)
+          test "${#toolchains[@]}" -eq 1
+
+          sudo chmod -R a+rX "${toolchains[0]}"
+          mkdir -p artifact
+          tar -C dist -cJf "artifact/${TRIPLE}.tar.xz" "$(basename "${toolchains[0]}")"
+          ls -lh "artifact/${TRIPLE}.tar.xz"
+
       - name: Upload toolchain artifact
         uses: actions/upload-artifact@v4
         with:
           name: toolchain-${{ matrix.host.arch }}-${{ matrix.target }}
-          path: dist/*
+          path: artifact/*.tar.xz
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Prepare failed build logs
+        if: failure()
+        env:
+          TRIPLE: ${{ matrix.target }}
+        run: |
+          set -euxo pipefail
+          sudo chmod -R a+rX "ctng_workspace/native/${TRIPLE}-gcc15" || true
+          mkdir -p failed-logs
+          find "ctng_workspace/native/${TRIPLE}-gcc15" \
+            \( -name build.log -o -name config.log \) \
+            -type f -print > failed-logs/files.txt
+          if [ -s failed-logs/files.txt ]; then
+            tar -T failed-logs/files.txt -czf "failed-logs/${TRIPLE}-logs.tar.gz"
+          else
+            tar -czf "failed-logs/${TRIPLE}-logs.tar.gz" -T /dev/null
+          fi
+
+      - name: Upload failed build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-logs-${{ matrix.host.arch }}-${{ matrix.target }}
+          path: failed-logs/*.tar.gz
+          if-no-files-found: warn
           retention-days: 7
 
   package:
@@ -113,7 +153,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: toolchain-${{ matrix.host }}-*
-          path: release-root
+          path: toolchain-archives
           merge-multiple: true
 
       - name: Verify and package toolchains
@@ -130,6 +170,17 @@ jobs:
         run: |
           set -euxo pipefail
           shopt -s nullglob
+          find toolchain-archives -mindepth 1 -maxdepth 1 -type f -name '*.tar.xz' -print | sort
+
+          archive_count="$(find toolchain-archives -mindepth 1 -maxdepth 1 -type f -name '*.tar.xz' | wc -l)"
+          test "$archive_count" -eq 7
+
+          mkdir -p release-root
+          for target in $TARGETS; do
+            test -f "toolchain-archives/${target}.tar.xz"
+            tar -C release-root -xJf "toolchain-archives/${target}.tar.xz"
+          done
+
           find release-root -mindepth 1 -maxdepth 1 -type d -print | sort
 
           toolchain_count="$(find release-root -mindepth 1 -maxdepth 1 -type d | wc -l)"
