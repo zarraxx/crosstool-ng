@@ -1,0 +1,183 @@
+name: release_gcc
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "GitHub Release tag"
+        required: true
+        type: string
+        default: "gcc-15.2.0"
+  push:
+    tags:
+      - "gcc-*"
+
+permissions:
+  contents: write
+  packages: read
+
+env:
+  GCC_VERSION: "15.2.0"
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+
+jobs:
+  build:
+    name: build ${{ matrix.host.arch }} / ${{ matrix.target }}
+    runs-on: ${{ matrix.host.runner }}
+    timeout-minutes: 1440
+    env:
+      GHCR_TOKEN: ${{ secrets.GH_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+        target:
+          - aarch64-unknown-linux-gnu
+          - armv7-unknown-linux-gnu
+          - loongarch64-unknown-linux-gnu
+          - mips64-unknown-linux-gnu
+          - riscv64-unknown-linux-gnu
+          - x86_64-unknown-linux-gnu
+          - x86_64-w64-mingw32
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          df -h
+
+      - name: Install host tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y podman util-linux xz-utils
+
+      - name: Restore crosstool-ng source archives
+        uses: actions/cache@v4
+        with:
+          path: archives
+          key: ctng-archives-${{ runner.os }}-${{ hashFiles('ctng_workspace/native/**/.config') }}
+          restore-keys: |
+            ctng-archives-${{ runner.os }}-
+
+      - name: Log in to GitHub Container Registry
+        if: env.GHCR_TOKEN != ''
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build toolchain
+        env:
+          TRIPLE: ${{ matrix.target }}
+        run: |
+          set -euxo pipefail
+          test -d "ctng_workspace/native/${TRIPLE}-gcc15"
+          rm -rf dist
+          mkdir -p archives dist
+          script -q -e -c "TRIPLE=${TRIPLE} ./build.sh" /dev/null
+          find dist -mindepth 1 -maxdepth 1 -type d -print
+
+      - name: Upload toolchain artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-${{ matrix.host.arch }}-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  package:
+    name: package ${{ matrix.host }}
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        host:
+          - x86_64
+          - aarch64
+
+    steps:
+      - name: Download ${{ matrix.host }} toolchains
+        uses: actions/download-artifact@v4
+        with:
+          pattern: toolchain-${{ matrix.host }}-*
+          path: release-root
+          merge-multiple: true
+
+      - name: Verify and package toolchains
+        env:
+          HOST_ARCH: ${{ matrix.host }}
+          TARGETS: >-
+            aarch64-unknown-linux-gnu
+            armv7-unknown-linux-gnu
+            loongarch64-unknown-linux-gnu
+            mips64-unknown-linux-gnu
+            riscv64-unknown-linux-gnu
+            x86_64-unknown-linux-gnu
+            x86_64-w64-mingw32
+        run: |
+          set -euxo pipefail
+          shopt -s nullglob
+          find release-root -mindepth 1 -maxdepth 1 -type d -print | sort
+
+          toolchain_count="$(find release-root -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          test "$toolchain_count" -eq 7
+
+          for target in $TARGETS; do
+            matches=(release-root/"${target}"*)
+            test "${#matches[@]}" -eq 1
+            test -x "${matches[0]}/bin/${target}-gcc"
+          done
+
+          tar -C release-root -cJf "gcc-${GCC_VERSION}-${HOST_ARCH}-linux-gnu.tar.xz" .
+          ls -lh "gcc-${GCC_VERSION}-${HOST_ARCH}-linux-gnu.tar.xz"
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcc-${{ env.GCC_VERSION }}-${{ matrix.host }}-linux-gnu
+          path: gcc-${{ env.GCC_VERSION }}-${{ matrix.host }}-linux-gnu.tar.xz
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: publish release
+    runs-on: ubuntu-latest
+    needs: package
+
+    steps:
+      - name: Download release archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gcc-${{ env.GCC_VERSION }}-*-linux-gnu
+          path: release
+          merge-multiple: true
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          ls -lh release/*.tar.xz
+          test "$(find release -mindepth 1 -maxdepth 1 -name '*.tar.xz' | wc -l)" -eq 2
+          test -f "release/gcc-${GCC_VERSION}-x86_64-linux-gnu.tar.xz"
+          test -f "release/gcc-${GCC_VERSION}-aarch64-linux-gnu.tar.xz"
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release/*.tar.xz --clobber
+          else
+            gh release create "$RELEASE_TAG" release/*.tar.xz \
+              --title "$RELEASE_TAG" \
+              --notes "GCC ${GCC_VERSION} toolchains for x86_64 and aarch64 Linux hosts."
+          fi
