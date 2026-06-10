@@ -6,6 +6,7 @@ ROOT_DIR=$(dirname "$(readlink -f "$0")")
 
 TRIPLE=${TRIPLE:-$ARCH-unknown-linux-gnu}
 GCC_MARJOR_VERSION=${GCC_VERSION:-15}
+CTNG_ACTION=${CTNG_ACTION:-build}
 
 HOST=${HOST:-native}
 
@@ -27,17 +28,30 @@ WORKSPACE_DIR=${WORKSPACE:-$HOME/workspace/$HOST_DIR_NAME}
 
 cd "$WORKSPACE_DIR/$TRIPLE-gcc${GCC_MARJOR_VERSION}"
 
-for attempt in 1 2 3; do
-    if ct-ng source; then
-        break
-    fi
+run_source() {
+    for attempt in 1 2 3; do
+        if ct-ng source; then
+            return 0
+        fi
 
-    if [[ "$attempt" -eq 3 ]]; then
-        echo "ct-ng source failed after $attempt attempts" >&2
-        exit 1
-    fi
+        if [[ "$attempt" -eq 3 ]]; then
+            echo "ct-ng source failed after $attempt attempts" >&2
+            return 1
+        fi
 
-    sleep $((attempt * 30))
-done
+        sleep $((attempt * 30))
+    done
+}
 
-ct-ng build
+case "$CTNG_ACTION" in
+    source)
+        run_source
+        ;;
+    build)
+        run_source
+        ct-ng build
+        ;;
+    *)
+        ct-ng "$CTNG_ACTION"
+        ;;
+esac

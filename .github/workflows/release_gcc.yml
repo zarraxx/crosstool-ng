@@ -84,7 +84,7 @@ jobs:
           set -euo pipefail
           printf '%s' "$GHCR_TOKEN" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: Build toolchain
+      - name: Prepare build directories
         env:
           TRIPLE: ${{ matrix.target }}
         run: |
@@ -93,15 +93,28 @@ jobs:
           rm -rf dist
           mkdir -p archives dist
           chmod -R a+rwX archives dist ctng_workspace
-          script -q -e -c "TRIPLE=${TRIPLE} ./build.sh" /dev/null
-          find dist -mindepth 1 -maxdepth 1 -type d -print
+
+      - name: Download toolchain sources
+        env:
+          TRIPLE: ${{ matrix.target }}
+        run: |
+          set -euxo pipefail
+          script -q -e -c "TRIPLE=${TRIPLE} CTNG_ACTION=source ./build.sh" /dev/null
 
       - name: Save crosstool-ng source archives
-        if: ${{ always() && steps.restore-ctng-archives.outputs.cache-hit != 'true' }}
+        if: ${{ success() && steps.restore-ctng-archives.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5.0.5
         with:
           path: archives
           key: ${{ steps.restore-ctng-archives.outputs.cache-primary-key }}
+
+      - name: Build toolchain
+        env:
+          TRIPLE: ${{ matrix.target }}
+        run: |
+          set -euxo pipefail
+          script -q -e -c "TRIPLE=${TRIPLE} ./build.sh" /dev/null
+          find dist -mindepth 1 -maxdepth 1 -type d -print
 
       - name: Pack toolchain artifact
         env:
@@ -173,14 +186,14 @@ jobs:
       - name: Verify and package toolchains
         env:
           HOST_ARCH: ${{ matrix.host }}
-          TARGETS: >-
-            aarch64-unknown-linux-gnu
-            armv7-unknown-linux-gnu
-            loongarch64-unknown-linux-gnu
-            mips64-unknown-linux-gnu
-            riscv64-unknown-linux-gnu
-            x86_64-unknown-linux-gnu
-            x86_64-w64-mingw32
+          TOOLCHAINS: >-
+            aarch64-unknown-linux-gnu:aarch64-unknown-linux-gnu
+            armv7-unknown-linux-gnu:armv7-unknown-linux-gnueabihf
+            loongarch64-unknown-linux-gnu:loongarch64-unknown-linux-gnu
+            mips64-unknown-linux-gnu:mips64el-unknown-linux-gnu
+            riscv64-unknown-linux-gnu:riscv64-unknown-linux-gnu
+            x86_64-unknown-linux-gnu:x86_64-unknown-linux-gnu
+            x86_64-w64-mingw32:x86_64-w64-mingw32
         run: |
           set -euxo pipefail
           shopt -s nullglob
@@ -190,9 +203,10 @@ jobs:
           test "$archive_count" -eq 7
 
           mkdir -p release-root
-          for target in $TARGETS; do
-            test -f "toolchain-archives/${target}.tar.xz"
-            tar -C release-root -xJf "toolchain-archives/${target}.tar.xz"
+          for toolchain in $TOOLCHAINS; do
+            archive="${toolchain%%:*}"
+            test -f "toolchain-archives/${archive}.tar.xz"
+            tar -C release-root -xJf "toolchain-archives/${archive}.tar.xz"
           done
 
           find release-root -mindepth 1 -maxdepth 1 -type d -print | sort
@@ -200,7 +214,8 @@ jobs:
           toolchain_count="$(find release-root -mindepth 1 -maxdepth 1 -type d | wc -l)"
           test "$toolchain_count" -eq 7
 
-          for target in $TARGETS; do
+          for toolchain in $TOOLCHAINS; do
+            target="${toolchain#*:}"
             matches=(release-root/"${target}"*)
             test "${#matches[@]}" -eq 1
             test -x "${matches[0]}/bin/${target}-gcc"
