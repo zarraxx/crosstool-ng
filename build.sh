@@ -21,4 +21,4 @@ podman run --rm -it \
     -v $ROOT_DIR/container_script:/home/ctng/scripts \
     -v $DIST:/home/ctng/x-tools \
     $IMAGE \
-    bash #/home/ctng/scripts/build_toolchain.sh
+    bash /home/ctng/scripts/build_toolchain.sh
