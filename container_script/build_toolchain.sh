@@ -26,4 +26,18 @@ WORKSPACE_DIR=${WORKSPACE:-$HOME/workspace/$HOST_DIR_NAME}
 
 
 cd "$WORKSPACE_DIR/$TRIPLE-gcc${GCC_MARJOR_VERSION}"
+
+for attempt in 1 2 3; do
+    if ct-ng source; then
+        break
+    fi
+
+    if [[ "$attempt" -eq 3 ]]; then
+        echo "ct-ng source failed after $attempt attempts" >&2
+        exit 1
+    fi
+
+    sleep $((attempt * 30))
+done
+
 ct-ng build

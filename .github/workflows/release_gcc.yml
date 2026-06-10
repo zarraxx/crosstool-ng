@@ -46,7 +46,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.3
 
       - name: Free runner disk space
         run: |
@@ -63,12 +63,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y podman util-linux xz-utils
 
+      - name: Prepare archive cache directory
+        run: mkdir -p archives
+
       - name: Restore crosstool-ng source archives
-        uses: actions/cache@v4
+        id: restore-ctng-archives
+        uses: actions/cache/restore@v5.0.5
         with:
           path: archives
-          key: ctng-archives-${{ runner.os }}-${{ hashFiles('ctng_workspace/native/**/.config') }}
+          key: ctng-archives-${{ runner.os }}-${{ matrix.host.arch }}-${{ matrix.target }}-${{ hashFiles(format('ctng_workspace/native/{0}-gcc15/.config', matrix.target)) }}
           restore-keys: |
+            ctng-archives-${{ runner.os }}-${{ matrix.host.arch }}-${{ matrix.target }}-
+            ctng-archives-${{ runner.os }}-${{ matrix.host.arch }}-
+            ctng-archives-${{ runner.os }}-${{ matrix.target }}-
             ctng-archives-${{ runner.os }}-
 
       - name: Log in to GitHub Container Registry
@@ -89,6 +96,13 @@ jobs:
           script -q -e -c "TRIPLE=${TRIPLE} ./build.sh" /dev/null
           find dist -mindepth 1 -maxdepth 1 -type d -print
 
+      - name: Save crosstool-ng source archives
+        if: ${{ always() && steps.restore-ctng-archives.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5.0.5
+        with:
+          path: archives
+          key: ${{ steps.restore-ctng-archives.outputs.cache-primary-key }}
+
       - name: Pack toolchain artifact
         env:
           TRIPLE: ${{ matrix.target }}
@@ -104,7 +118,7 @@ jobs:
           ls -lh "artifact/${TRIPLE}.tar.xz"
 
       - name: Upload toolchain artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: toolchain-${{ matrix.host.arch }}-${{ matrix.target }}
           path: artifact/*.tar.xz
@@ -130,7 +144,7 @@ jobs:
 
       - name: Upload failed build logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: failed-logs-${{ matrix.host.arch }}-${{ matrix.target }}
           path: failed-logs/*.tar.gz
@@ -150,7 +164,7 @@ jobs:
 
     steps:
       - name: Download ${{ matrix.host }} toolchains
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8.0.1
         with:
           pattern: toolchain-${{ matrix.host }}-*
           path: toolchain-archives
@@ -196,7 +210,7 @@ jobs:
           ls -lh "gcc-${GCC_VERSION}-${HOST_ARCH}-linux-gnu.tar.xz"
 
       - name: Upload release archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: gcc-${{ env.GCC_VERSION }}-${{ matrix.host }}-linux-gnu
           path: gcc-${{ env.GCC_VERSION }}-${{ matrix.host }}-linux-gnu.tar.xz
@@ -210,7 +224,7 @@ jobs:
 
     steps:
       - name: Download release archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8.0.1
         with:
           pattern: gcc-${{ env.GCC_VERSION }}-*-linux-gnu
           path: release
