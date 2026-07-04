@@ -91,13 +91,12 @@ jobs:
           case "$kernel_version" in
             4.19.325)
               downloads=(
-                "linux-4.19.325.tar.xz|https://mirrors.ustc.edu.cn/kernel.org/linux/kernel/v4.x/linux-4.19.325.tar.xz"
-                "patch-4.19.325.xz|https://mirrors.ustc.edu.cn/kernel.org/linux/kernel/v4.x/patch-4.19.325.xz"
+                "linux-4.19.325.tar.xz|https://cloud.xyan.net.cn/s/dBS2rtNFN2Smibo/download"
               )
               ;;
             3.10.108)
               downloads=(
-                "linux-3.10.108.tar.xz|https://mirrors.ustc.edu.cn/kernel.org/linux/kernel/v3.x/linux-3.10.108.tar.xz"
+                "linux-3.10.108.tar.xz|https://cloud.xyan.net.cn/s/dL2zRM2PAARcbzi/download"
               )
               ;;
             *)
