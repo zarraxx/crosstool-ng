@@ -63,7 +63,7 @@ jobs:
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y podman util-linux xz-utils
+          sudo apt-get install -y curl podman util-linux xz-utils
 
       - name: Prepare archive cache directory
         run: mkdir -p archives
@@ -79,6 +79,49 @@ jobs:
             ctng-archives-${{ runner.os }}-${{ matrix.host.arch }}-
             ctng-archives-${{ runner.os }}-${{ matrix.target }}-
             ctng-archives-${{ runner.os }}-
+
+      - name: Seed Linux kernel source archives
+        env:
+          TRIPLE: ${{ matrix.target }}
+        run: |
+          set -euxo pipefail
+          config="ctng_workspace/native/${TRIPLE}-gcc15/.config"
+          kernel_version="$(sed -n 's/^CT_LINUX_VERSION="\(.*\)"$/\1/p' "$config" || true)"
+
+          case "$kernel_version" in
+            4.19.325)
+              downloads=(
+                "linux-4.19.325.tar.xz|https://mirrors.ustc.edu.cn/kernel.org/linux/kernel/v4.x/linux-4.19.325.tar.xz"
+                "patch-4.19.325.xz|https://mirrors.ustc.edu.cn/kernel.org/linux/kernel/v4.x/patch-4.19.325.xz"
+              )
+              ;;
+            3.10.108)
+              downloads=(
+                "linux-3.10.108.tar.xz|https://mirrors.ustc.edu.cn/kernel.org/linux/kernel/v3.x/linux-3.10.108.tar.xz"
+              )
+              ;;
+            *)
+              echo "No seeded Linux kernel source archive for CT_LINUX_VERSION=${kernel_version:-none}"
+              exit 0
+              ;;
+          esac
+
+          mkdir -p archives
+          for item in "${downloads[@]}"; do
+            file="${item%%|*}"
+            url="${item#*|}"
+            if [ -s "archives/${file}" ]; then
+              echo "Using cached archives/${file}"
+              continue
+            fi
+
+            tmp="archives/${file}.tmp"
+            rm -f "$tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 --output "$tmp" "$url"
+            mv "$tmp" "archives/${file}"
+          done
+
+          ls -lh archives/linux-*.tar.xz archives/patch-*.xz 2>/dev/null || true
 
       - name: Log in to GitHub Container Registry
         if: env.GHCR_TOKEN != ''
