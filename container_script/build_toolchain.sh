@@ -4,7 +4,17 @@ set -e
 ARCH=$(uname -m)
 ROOT_DIR=$(dirname "$(readlink -f "$0")")
 
-TRIPLE=${TRIPLE:-$ARCH-unknown-linux-gnu}
+LIBC=${LIBC:-gnu}
+
+case "$LIBC" in
+    gnu|musl) ;;
+    *)
+        echo "Unsupported LIBC: $LIBC (expected gnu or musl)" >&2
+        exit 1
+        ;;
+esac
+
+TRIPLE=${TRIPLE:-$ARCH-unknown-linux-$LIBC}
 GCC_MARJOR_VERSION=${GCC_VERSION:-15}
 CTNG_ACTION=${CTNG_ACTION:-build}
 
@@ -19,7 +29,11 @@ if [[ "$HOST" != "native" ]]; then
     fi
     export PATH=$HOST_TOOLCHAIN_DIR/bin:$PATH
 else
-    HOST_DIR_NAME=native
+    if [[ "$LIBC" == "musl" ]]; then
+        HOST_DIR_NAME=native-musl
+    else
+        HOST_DIR_NAME=native
+    fi
 fi
 
 ls "$HOME/workspace/$HOST_DIR_NAME"

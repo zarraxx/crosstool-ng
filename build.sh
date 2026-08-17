@@ -10,13 +10,22 @@ mkdir -p $DIST
 mkdir -p $ARCHIVE_DIR
 
 ARCH=$(uname -m)
-TRIPLE=${TRIPLE:-$ARCH-unknown-linux-gnu}
+LIBC=${LIBC:-gnu}
+case "$LIBC" in
+    gnu|musl) ;;
+    *)
+        echo "Unsupported LIBC: $LIBC (expected gnu or musl)" >&2
+        exit 1
+        ;;
+esac
+
+TRIPLE=${TRIPLE:-$ARCH-unknown-linux-$LIBC}
 HOST=${HOST:-native}
 CTNG_ACTION=${CTNG_ACTION:-build}
 
 podman run --rm -it \
     --userns=keep-id \
-    -e LINES=50 -e COLUMNS=160 -e TRIPLE=$TRIPLE -e HOST=$HOST \
+    -e LINES=50 -e COLUMNS=160 -e TRIPLE=$TRIPLE -e HOST=$HOST -e LIBC=$LIBC \
     -e CTNG_ACTION=$CTNG_ACTION \
     -v $ARCHIVE_DIR:/home/ctng/src \
     -v $ROOT_DIR/ctng_workspace:/home/ctng/workspace \

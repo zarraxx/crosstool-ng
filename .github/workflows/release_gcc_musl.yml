@@ -1,4 +1,4 @@
-name: release_gcc
+name: release_gcc_musl
 
 on:
   workflow_dispatch:
@@ -7,11 +7,10 @@ on:
         description: "GitHub Release tag"
         required: true
         type: string
-        default: "gcc-15.2.0"
+        default: "gcc-musl-15.2.0"
   push:
     tags:
-      - "gcc-*"
-      - "!gcc-musl-*"
+      - "gcc-musl-*"
 
 permissions:
   contents: write
@@ -37,15 +36,14 @@ jobs:
           - arch: aarch64
             runner: ubuntu-24.04-arm
         target:
-          - aarch64-unknown-linux-gnu
-          - armv7-unknown-linux-gnueabihf
-          - loongarch64-unknown-linux-gnu
-          - mips64el-unknown-linux-gnu
-          - powerpc64le-unknown-linux-gnu
-          - riscv64-unknown-linux-gnu
-          - s390x-ibm-linux-gnu
-          - x86_64-unknown-linux-gnu
-          - x86_64-w64-mingw32
+          - aarch64-unknown-linux-musl
+          - armv7-unknown-linux-musleabihf
+          - loongarch64-unknown-linux-musl
+          - mips64el-unknown-linux-musl
+          - powerpc64le-unknown-linux-musl
+          - riscv64-unknown-linux-musl
+          - s390x-ibm-linux-musl
+          - x86_64-unknown-linux-musl
 
     steps:
       - name: Checkout repository
@@ -74,7 +72,7 @@ jobs:
         uses: actions/cache/restore@v5.0.5
         with:
           path: archives
-          key: ctng-archives-${{ runner.os }}-${{ matrix.host.arch }}-${{ matrix.target }}-${{ hashFiles(format('ctng_workspace/native/{0}-gcc15/.config', matrix.target)) }}
+          key: ctng-archives-${{ runner.os }}-${{ matrix.host.arch }}-${{ matrix.target }}-${{ hashFiles(format('ctng_workspace/native-musl/{0}-gcc15/.config', matrix.target)) }}
           restore-keys: |
             ctng-archives-${{ runner.os }}-${{ matrix.host.arch }}-${{ matrix.target }}-
             ctng-archives-${{ runner.os }}-${{ matrix.host.arch }}-
@@ -86,7 +84,7 @@ jobs:
           TRIPLE: ${{ matrix.target }}
         run: |
           set -euxo pipefail
-          config="ctng_workspace/native/${TRIPLE}-gcc15/.config"
+          config="ctng_workspace/native-musl/${TRIPLE}-gcc15/.config"
           kernel_version="$(sed -n 's/^CT_LINUX_VERSION="\(.*\)"$/\1/p' "$config" || true)"
 
           case "$kernel_version" in
@@ -134,7 +132,7 @@ jobs:
           TRIPLE: ${{ matrix.target }}
         run: |
           set -euxo pipefail
-          test -d "ctng_workspace/native/${TRIPLE}-gcc15"
+          test -d "ctng_workspace/native-musl/${TRIPLE}-gcc15"
           rm -rf dist
           mkdir -p archives dist
           chmod -R a+rwX archives dist ctng_workspace
@@ -144,7 +142,7 @@ jobs:
           TRIPLE: ${{ matrix.target }}
         run: |
           set -euxo pipefail
-          script -q -e -c "TRIPLE=${TRIPLE} CTNG_ACTION=source ./build.sh" /dev/null
+          script -q -e -c "LIBC=musl TRIPLE=${TRIPLE} CTNG_ACTION=source ./build.sh" /dev/null
 
       - name: Save crosstool-ng source archives
         if: ${{ success() && steps.restore-ctng-archives.outputs.cache-hit != 'true' }}
@@ -158,7 +156,7 @@ jobs:
           TRIPLE: ${{ matrix.target }}
         run: |
           set -euxo pipefail
-          script -q -e -c "TRIPLE=${TRIPLE} ./build.sh" /dev/null
+          script -q -e -c "LIBC=musl TRIPLE=${TRIPLE} ./build.sh" /dev/null
           find dist -mindepth 1 -maxdepth 1 -type d -print
 
       - name: Pack toolchain artifact
@@ -189,9 +187,9 @@ jobs:
           TRIPLE: ${{ matrix.target }}
         run: |
           set -euxo pipefail
-          sudo chmod -R a+rX "ctng_workspace/native/${TRIPLE}-gcc15" || true
+          sudo chmod -R a+rX "ctng_workspace/native-musl/${TRIPLE}-gcc15" || true
           mkdir -p failed-logs
-          find "ctng_workspace/native/${TRIPLE}-gcc15" \
+          find "ctng_workspace/native-musl/${TRIPLE}-gcc15" \
             \( -name build.log -o -name config.log \) \
             -type f -print > failed-logs/files.txt
           if [ -s failed-logs/files.txt ]; then
@@ -232,22 +230,21 @@ jobs:
         env:
           HOST_ARCH: ${{ matrix.host }}
           TOOLCHAINS: >-
-            aarch64-unknown-linux-gnu:aarch64-unknown-linux-gnu
-            armv7-unknown-linux-gnueabihf:armv7-unknown-linux-gnueabihf
-            loongarch64-unknown-linux-gnu:loongarch64-unknown-linux-gnu
-            mips64el-unknown-linux-gnu:mips64el-unknown-linux-gnu
-            powerpc64le-unknown-linux-gnu:powerpc64le-unknown-linux-gnu
-            riscv64-unknown-linux-gnu:riscv64-unknown-linux-gnu
-            s390x-ibm-linux-gnu:s390x-ibm-linux-gnu
-            x86_64-unknown-linux-gnu:x86_64-unknown-linux-gnu
-            x86_64-w64-mingw32:x86_64-w64-mingw32
+            aarch64-unknown-linux-musl:aarch64-unknown-linux-musl
+            armv7-unknown-linux-musleabihf:armv7-unknown-linux-musleabihf
+            loongarch64-unknown-linux-musl:loongarch64-unknown-linux-musl
+            mips64el-unknown-linux-musl:mips64el-unknown-linux-musl
+            powerpc64le-unknown-linux-musl:powerpc64le-unknown-linux-musl
+            riscv64-unknown-linux-musl:riscv64-unknown-linux-musl
+            s390x-ibm-linux-musl:s390x-ibm-linux-musl
+            x86_64-unknown-linux-musl:x86_64-unknown-linux-musl
         run: |
           set -euxo pipefail
           shopt -s nullglob
           find toolchain-archives -mindepth 1 -maxdepth 1 -type f -name '*.tar.xz' -print | sort
 
           archive_count="$(find toolchain-archives -mindepth 1 -maxdepth 1 -type f -name '*.tar.xz' | wc -l)"
-          test "$archive_count" -eq 9
+          test "$archive_count" -eq 8
 
           mkdir -p release-root
           for toolchain in $TOOLCHAINS; do
@@ -259,7 +256,7 @@ jobs:
           find release-root -mindepth 1 -maxdepth 1 -type d -print | sort
 
           toolchain_count="$(find release-root -mindepth 1 -maxdepth 1 -type d | wc -l)"
-          test "$toolchain_count" -eq 9
+          test "$toolchain_count" -eq 8
 
           for toolchain in $TOOLCHAINS; do
             target="${toolchain#*:}"
@@ -268,14 +265,14 @@ jobs:
             test -x "${matches[0]}/bin/${target}-gcc"
           done
 
-          tar -C release-root -cJf "gcc-${GCC_VERSION}-${HOST_ARCH}-linux-gnu.tar.xz" .
-          ls -lh "gcc-${GCC_VERSION}-${HOST_ARCH}-linux-gnu.tar.xz"
+          tar -C release-root -cJf "gcc-${GCC_VERSION}-${HOST_ARCH}-linux-musl.tar.xz" .
+          ls -lh "gcc-${GCC_VERSION}-${HOST_ARCH}-linux-musl.tar.xz"
 
       - name: Upload release archive
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: gcc-${{ env.GCC_VERSION }}-${{ matrix.host }}-linux-gnu
-          path: gcc-${{ env.GCC_VERSION }}-${{ matrix.host }}-linux-gnu.tar.xz
+          name: gcc-${{ env.GCC_VERSION }}-${{ matrix.host }}-linux-musl
+          path: gcc-${{ env.GCC_VERSION }}-${{ matrix.host }}-linux-musl.tar.xz
           if-no-files-found: error
           retention-days: 7
 
@@ -288,7 +285,7 @@ jobs:
       - name: Download release archives
         uses: actions/download-artifact@v8.0.1
         with:
-          pattern: gcc-${{ env.GCC_VERSION }}-*-linux-gnu
+          pattern: gcc-${{ env.GCC_VERSION }}-*-linux-musl
           path: release
           merge-multiple: true
 
@@ -300,13 +297,13 @@ jobs:
           set -euxo pipefail
           ls -lh release/*.tar.xz
           test "$(find release -mindepth 1 -maxdepth 1 -name '*.tar.xz' | wc -l)" -eq 2
-          test -f "release/gcc-${GCC_VERSION}-x86_64-linux-gnu.tar.xz"
-          test -f "release/gcc-${GCC_VERSION}-aarch64-linux-gnu.tar.xz"
+          test -f "release/gcc-${GCC_VERSION}-x86_64-linux-musl.tar.xz"
+          test -f "release/gcc-${GCC_VERSION}-aarch64-linux-musl.tar.xz"
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release/*.tar.xz --clobber
           else
             gh release create "$RELEASE_TAG" release/*.tar.xz \
               --title "$RELEASE_TAG" \
-              --notes "GCC ${GCC_VERSION} toolchains for x86_64 and aarch64 Linux hosts."
+              --notes "GCC ${GCC_VERSION} musl toolchains for x86_64 and aarch64 Linux hosts."
           fi
